@@ -1,5 +1,3 @@
-# ProcessMaker 4 Documentation
-
 # Overview
 
 ProcessMaker is an open source, workflow management software suite, which includes tools to automate your workflow, design forms, create documents, assign roles and users, create routing rules, and map an individual process quickly and easily. It's relatively lightweight and doesn't require any kind of installation on the client computer. This file describes the requirements and installation steps for the server.
@@ -36,10 +34,10 @@ $ sudo apt install -y \
 
 ### Step 3. Install Composer
 ```
+$ cd /tmp
 $ wget -O composer-setup.php https://getcomposer.org/installer
 $ sudo php composer-setup.php --install-dir=/usr/local/bin --filename=composer
 $ composer self-update
-$ rm -rf composer-setup.php
 ```
 
 ### Step 4. Install NodeJS
@@ -52,22 +50,29 @@ Click [this link](https://github.com/nodesource/distributions#manual-installatio
 ### Step 5. Install Docker
 * [Install Docker Engine on Ubuntu](https://docs.docker.com/engine/install/ubuntu/)
 * [Install Docker Compose on Ubuntu](https://docs.docker.com/compose/install/)
-* If you are using proxy, check it out [this link](https://docs.docker.com/network/proxy/#use-environment-variables)
+* If you are behind proxy, check it out [this link](https://docs.docker.com/network/proxy/#use-environment-variables)
 
-### Step 6. Run MySQL and Redis server
-Create `.env` file:
+### Step 6. Setup MySQL and Redis server
+Create a folder:
 ```
-cat <<EOF> db.env
-MYSQL_ROOT_PASSWORD=password
-MYSQL_PASSWORD=password
-MYSQL_USER=processmaker
+$ sudo mkdir -p /code/docker
+$ cd /code/docker
+```
+
+Inside this folder create 2 file `db.env` and `docker-compose.yml`:
+Create `db.env` file:
+```
+$ cat <<EOF> db.env
+MYSQL_ROOT_PASSWORD=pass
+MYSQL_PASSWORD=pass
+MYSQL_USER=pm
 MYSQL_DATABASE=processmaker
 EOF
 ```
 
 Create `docker-compose.yml` file:
 ```
-cat << EOF > docker-compose.yml
+$ cat << EOF > docker-compose.yml
 version: "3.7"
 services:
   redis:
@@ -78,79 +83,102 @@ services:
     restart: always
   mysql:
     image: mariadb
-    container_name: mariadb
+    container_name: mysql
     restart: always
     ports:
       - 3306:3306
     env_file:
       - db.env
     volumes:
-      - database:/var/lib/mysql
+      - mysql-data:/var/lib/mysql
   phpmyadmin:
     image: phpmyadmin
     container_name: phpmyadmin
     ports:
-      - 81:80
+      - 8080:80
     restart: always
     environment:
-      PMA_HOST: mariadb
+      PMA_HOST: mysql
 volumes:
-  database:
+  mysql-data:
 EOF
 ```
 
 Run docker-compose:
-
 ```
-sudo docker-compose up -d
+$ sudo docker-compose up -d
 ```
 
 ### Step 7. Get PM4Core configuration files
-
 ```
 $ git clone https://github.com/ProcessMaker/pm4core-docker.git /tmp/pm4core-docker
 ```
 
 ### Step 8. Setting Cron Jobs
-
 ```
 $ sudo cp -r /tmp/pm4core-docker/build-files/laravel-cron /etc/cron.d/laravel-cron
 $ sudo chmod 0644 /etc/cron.d/laravel-cron && crontab /etc/cron.d/laravel-cron
 ```
 
-### Step 9. Setup Supervisor
-
+### Step 9. Setup Supervisord
 ```
 $ sudo bash -c 'cat << "EOF" > /etc/supervisor/conf.d/services.conf
 [program:horizon]
 directory=/code/pm4
 command=php artisan horizon
+autostart=true
+autorestart=true
+user=root
+numprocs=1
+redirect_stderr=true
 
 [program:laravel-echo-server]
 directory=/code/pm4
 command=npx laravel-echo-server start
+autostart=true
+autorestart=true
+user=root
+numprocs=1
+redirect_stderr=true
 
 [program:cron]
 command=cron -f
-EOF
+EOF'
+```
+
+Useful commands:
+```
+$ sudo systemctl status supervisor
+$ sudo systemctl start supervisor
+$ sudo systemctl restart supervisor
+```
+
+If you have any issue with laravel-echo-server, you can use [pusher](https://pusher.com/). Create a channel with name `processmaker` and change value in `.env` file:
+```
+BROADCAST_DRIVER=pusher
+...
+PUSHER_APP_ID=your_app_id
+PUSHER_APP_KEY=your_app_key
+PUSHER_APP_SECRET=your_app_secret
+PUSHER_CLUSTER=your_app_cluster
+PUSHER_TLS=TRUE
+PUSHER_DEBUG=FALSE
 ```
 
 ### Step 10. Setup ProcessMaker
-
-1. Clone Processmaker source to `pm4` folder:
+1. Get Processmaker source:
 ```
 $ sudo mkdir -p /code/pm4
-$ sudo chown $USER:$USER /code/pm4
-$ git clone https://github.com/BPMS-VTS/bpms.git /code/pm4
+$ git clone https://github.com/jounger/processmaker.git /code/pm4
 ```
 
-2. Copy configuration files to `pm4` folder:
+2. Copy configuration files:
 ```
 $ cp -r /tmp/pm4core-docker/build-files/laravel-echo-server.json /code/pm4
 $ cp -r /tmp/pm4core-docker/build-files/init.sh /code/pm4
 ```
 
-3. Change database configuration in `/code/pm4/init.sh` file:
+3. Change database configurations:
 Export environment variables:
 ```
 $ export PM_VERSION=4.1.18
@@ -159,19 +187,16 @@ $ export PM_APP_PORT=8080
 $ export PM_BROADCASTER_PORT=6001
 $ export PM_DOCKER_SOCK=/var/run/docker.sock
 ```
-Replace to correct info:
+
+Change name of containers by local IP address (127.0.0.1):
 ```
 $ sed -i 's/h mysql/h 127\.0\.0\.1/g' /code/pm4/init.sh
-$ sed -i 's/u pm/u processmaker/g' /code/pm4/init.sh
-$ sed -i 's/ppass/ppassword/g' /code/pm4/init.sh
 $ sed -i 's/host=mysql/host=127\.0\.0\.1/g' /code/pm4/init.sh
 $ sed -i 's/host=redis/host=127\.0\.0\.1/g' /code/pm4/init.sh
-$ sed -i 's/username=pm/username=processmaker/g' /code/pm4/init.sh
-$ sed -i 's/password=pass/password=password/g' /code/pm4/init.sh
 $ chmod +x /code/pm4/init.sh
 ```
 
-If you are using proxy, run commands bellow:
+If you are behind proxy, run commands bellow:
 ```
 $ git checkout /code/pm4/ProcessMaker/Console/Commands/BuildScriptExecutors.php
 $ sed -i 's/docker build/docker build \-\-build\-arg http\_proxy\=http\:\/\/0\.0\.0\.0\:0 \-\-build\-arg https\_proxy\=http\:\/\/0\.0\.0\.0\:0/g' /code/pm4/ProcessMaker/Console/Commands/BuildScriptExecutors.php
@@ -185,13 +210,19 @@ $ sudo chown -R :www-data /code/pm4/bootstrap/cache/
 $ sudo chmod -R 0777 /code/pm4/storage/
 $ sudo chmod -R o+w /code/pm4/storage/
 $ sudo chmod -R 0775 /code/pm4/bootstrap/cache/
-$ sudo php artisan key:generate
 ```
 5. Install composer and node dependencies:
+Composer:
 ```
 $ cd /code/pm4
 $ composer install
-$ ./init.sh
+$ sudo php artisan key:generate
+$ /code/pm4/init.sh
+```
+
+NPM:
+```
+$ cd /code/pm4
 $ npm install --unsafe-perm=true
 $ npm run dev
 ```
@@ -202,7 +233,7 @@ Create nginx configuration file for processmaker:
 $ sudo bash -c 'cat << "EOF" > /etc/nginx/sites-available/processmaker.conf
 server {
     listen 80;
-    server_name processmaker.local;
+    server_name localhost;
     root /code/pm4/public;
 
     add_header X-Frame-Options "SAMEORIGIN";
@@ -233,7 +264,7 @@ server {
         deny all;
     }
 }
-EOF
+EOF'
 ```
 Then...
 ```
@@ -246,13 +277,26 @@ $ sudo systemctl reload nginx
 $ sudo systemctl restart nginx
 ```
 
-### Notice: Debuging
+### Notice: Debugging
 Turn on debug mode in `.env` to trace detail errors instead of the Whoops page.
 ```
 APP_DEBUG=TRUE
 ```
-Goto http://localhost:80 and use default account to login site:
+
+Enter http://localhost and use default account to login site:
 - username: admin
 - password: admin123
+
+In case you setup Processmaker inside VirtualBox and want to export it outside, firewall must be install and allow what ports you want:
+```
+$ sudo apt-get install ufw
+$ sudo ufw enable
+$ sudo ufw allow ssh // ssh (22) to allow access to inside VM
+$ sudo ufw allow 80 // 80 is application port
+$ sudo ufw allow 6001 // 6001 is websocket port
+$ sudo ufw status verbose
+```
+
+In VirtualBox forward above ports.
 
 End.
