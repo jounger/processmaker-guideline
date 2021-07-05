@@ -205,8 +205,8 @@ You need to replace `http\:\/\/0\.0\.0\.0\:0` by a real proxy. For example: `htt
 
 4. Grant permission to processmaker source
 ```
-$ sudo chown -R :www-data /code/pm4/storage/
-$ sudo chown -R :www-data /code/pm4/bootstrap/cache/
+$ sudo chown -R www-data:www-data /code/pm4/storage/
+$ sudo chown -R www-data:www-data /code/pm4/bootstrap/cache/
 $ sudo chmod -R 0777 /code/pm4/storage/
 $ sudo chmod -R o+w /code/pm4/storage/
 $ sudo chmod -R 0775 /code/pm4/bootstrap/cache/
